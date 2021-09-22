@@ -1,12 +1,20 @@
 #include <windows.h>
 #include <d2d1.h>
+#include <dwrite.h>
+#include <iostream>
+#pragma comment(lib, "Dwrite")
 #pragma comment(lib, "d2d1")
 #include "basewin.h"
 
 class MainWindow : public BaseWindow<MainWindow> {
+    IDWriteFactory* pWriteFactory;
+    ID2D1SolidColorBrush* pTextBrush;
+    IDWriteTextFormat* pTextFormat;
+
     ID2D1Factory* pFactory;
     ID2D1HwndRenderTarget* pRenderTarget;
     ID2D1SolidColorBrush* pBrush;
+    
     D2D1_RECT_F           rect1;
     D2D1_RECT_F           rect2;
     D2D1_RECT_F           rect3;
@@ -21,7 +29,9 @@ class MainWindow : public BaseWindow<MainWindow> {
 
 
     void    CalculateLayout();
+    HRESULT CreateTextResources();
     HRESULT CreateGraphicsResources();
+    void    DiscardTextResources();
     void    DiscardGraphicsResources();
     void    OnPaint();
     void    Resize();
@@ -68,23 +78,45 @@ void MainWindow::CalculateLayout() {
     }
 }
 
-//handels the initialization of the pFactory
+//handels the initialization of the pRenderTarget
 HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr = S_OK;
+    HRESULT hr2 = S_OK;
     if (pRenderTarget == nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
         D2D1_SIZE_U size = D2D1::SizeU(rc.right, rc.bottom);
         hr = pFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(m_hwnd, size), &pRenderTarget);
         if (SUCCEEDED(hr)) {
-            const D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::Orange); //light blue
-            hr = pRenderTarget->CreateSolidColorBrush(color, &pBrush);
+            //const D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::Orange);
+            //const D2D1_COLOR_F color2 = D2D1::ColorF(D2D1::ColorF::Black);
+            hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Orange), &pBrush);
+            hr2 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &pTextBrush);
 
             if (SUCCEEDED(hr)) {
                 CalculateLayout();
             }
         }
     }
+    return hr;
+}
+
+HRESULT MainWindow::CreateTextResources() {
+    HRESULT hr = S_OK;
+    hr = pWriteFactory->CreateTextFormat(
+        L"Arial",
+        NULL,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        36.0f,
+        L"en-us",
+        &pTextFormat
+    );
+    if (SUCCEEDED(hr)) {
+        pTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+    
     return hr;
 }
 
@@ -100,10 +132,16 @@ void MainWindow::DiscardGraphicsResources() {
     SafeRelease(&pBrush);
 }
 
-//the onpaint method which redraws the rectangles on the left
+void MainWindow::DiscardTextResources() {
+    SafeRelease(&pTextBrush);
+    SafeRelease(&pTextFormat);
+}
+
+//the onpaint method which redraws the rectangles on the left along with the lines surrounding the app
 void MainWindow::OnPaint() {
     HRESULT hr = CreateGraphicsResources();
-    if (SUCCEEDED(hr)) {
+    HRESULT hr2 = CreateTextResources();
+    if (SUCCEEDED(hr) ) {
         PAINTSTRUCT ps;
         BeginPaint(m_hwnd, &ps);
         pRenderTarget->BeginDraw();
@@ -118,9 +156,15 @@ void MainWindow::OnPaint() {
         pRenderTarget->DrawLine(topLeft, bottomLeft, pBrush, 4.0f);
         pRenderTarget->DrawLine(bottomLeft, bottomRight, pBrush, 4.0f);
         pRenderTarget->DrawLine(topRight, bottomRight, pBrush, 4.0f);
+        pRenderTarget->DrawTextW(L"Minkowski Difference", 20, pTextFormat, rect1, pTextBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+        pRenderTarget->DrawTextW(L"Minkowski Sum", 13, pTextFormat, rect2, pTextBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+        pRenderTarget->DrawTextW(L"Quickhull", 9, pTextFormat, rect3, pTextBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+        pRenderTarget->DrawTextW(L"Point Convex Hull", 17, pTextFormat, rect4, pTextBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+        pRenderTarget->DrawTextW(L"GJK", 3, pTextFormat, rect5, pTextBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
         hr = pRenderTarget->EndDraw();
         if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET) {
             DiscardGraphicsResources();
+            DiscardTextResources();
         }
         EndPaint(m_hwnd, &ps);
     }
@@ -146,7 +190,12 @@ LRESULT MainWindow::HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_CREATE:
         if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pFactory))){
             return -1;  // Fail CreateWindowEx.
+        }else {
+            DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**> (&pWriteFactory));
         }
+        //if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**> (&pWriteFactory)))) {
+        //    return -1;
+        //}//todo here
         return 0;
 
     case WM_DESTROY:
