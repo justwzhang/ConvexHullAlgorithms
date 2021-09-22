@@ -1,4 +1,6 @@
 #include <windows.h>
+#include <Windowsx.h>
+
 #include <d2d1.h>
 #include <dwrite.h>
 #include <iostream>
@@ -7,19 +9,22 @@
 #include "basewin.h"
 
 class MainWindow : public BaseWindow<MainWindow> {
+    wchar_t*           currentAlgLoaded;
+    //tools for writing the text in the boxes
     IDWriteFactory* pWriteFactory;
     ID2D1SolidColorBrush* pTextBrush;
     IDWriteTextFormat* pTextFormat;
-
+    //tools for drawing everything
     ID2D1Factory* pFactory;
     ID2D1HwndRenderTarget* pRenderTarget;
     ID2D1SolidColorBrush* pBrush;
-    
-    D2D1_RECT_F           rect1;
-    D2D1_RECT_F           rect2;
-    D2D1_RECT_F           rect3;
-    D2D1_RECT_F           rect4;
-    D2D1_RECT_F           rect5;
+    //the text rectangles on the left
+    D2D1_RECT_F           rect1;//Minkowski Difference
+    D2D1_RECT_F           rect2;//Minkowski Sum
+    D2D1_RECT_F           rect3;//Quickhull
+    D2D1_RECT_F           rect4;//Point Convex Hull
+    D2D1_RECT_F           rect5;//GJK
+    //the points for the line outline of the program
     D2D1_POINT_2F         topLeft;
     D2D1_POINT_2F         topRight;
     D2D1_POINT_2F         bottomLeft;
@@ -27,6 +32,8 @@ class MainWindow : public BaseWindow<MainWindow> {
     D2D1_POINT_2F         listLeftTop;
     D2D1_POINT_2F         listLeftBottom;
 
+    bool    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
+    void    OnLButtonDown(int pixelX, int pixelY);
 
     void    CalculateLayout();
     HRESULT CreateTextResources();
@@ -40,9 +47,31 @@ public:
 
     MainWindow() : pFactory(nullptr), pRenderTarget(nullptr), pBrush(nullptr) {}
 
-    PCWSTR  ClassName() const { return L"Circle Window Class"; }
+    PCWSTR  ClassName() const { return L"Convex Hull Algorithms Window Class"; }
     LRESULT HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam);
 };
+
+class DPIScale{
+    static float DPIscaleX;
+    static float DPIscaleY;
+
+public:
+    static void Initialize(ID2D1Factory* pFactory){
+        FLOAT dpiX, dpiY;
+        pFactory->GetDesktopDpi(&dpiX, &dpiY);
+        DPIscaleX = dpiX / 96.0f;
+        DPIscaleY = dpiY / 96.0f;
+    }
+    template <typename T>static float PixelsToDipsX(T x){
+        return static_cast<float>(x) / DPIscaleX;
+    }
+    template <typename T>static float PixelsToDipsY(T y){
+        return static_cast<float>(y) / DPIscaleY;
+    }
+};
+float DPIScale::DPIscaleX = 1.0f;
+float DPIScale::DPIscaleY = 1.0f;
+
 
 //Calculates that new layout of the buttons on the left based on the screen size
 void MainWindow::CalculateLayout() {
@@ -88,8 +117,6 @@ HRESULT MainWindow::CreateGraphicsResources() {
         D2D1_SIZE_U size = D2D1::SizeU(rc.right, rc.bottom);
         hr = pFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(m_hwnd, size), &pRenderTarget);
         if (SUCCEEDED(hr)) {
-            //const D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::Orange);
-            //const D2D1_COLOR_F color2 = D2D1::ColorF(D2D1::ColorF::Black);
             hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Orange), &pBrush);
             hr2 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &pTextBrush);
 
@@ -100,7 +127,7 @@ HRESULT MainWindow::CreateGraphicsResources() {
     }
     return hr;
 }
-
+//creates the text formating(font, font size etc)
 HRESULT MainWindow::CreateTextResources() {
     HRESULT hr = S_OK;
     hr = pWriteFactory->CreateTextFormat(
@@ -120,6 +147,7 @@ HRESULT MainWindow::CreateTextResources() {
     return hr;
 }
 
+//removes the memory alocation for a given variable
 template <class T> void SafeRelease(T** x) {
     if (*x) {
         (*x)->Release();
@@ -170,6 +198,7 @@ void MainWindow::OnPaint() {
     }
 }
 
+//called when the window size is changed
 void MainWindow::Resize() {
     if (pRenderTarget != nullptr) {
         RECT rc;
@@ -183,36 +212,91 @@ void MainWindow::Resize() {
     }
 }
 
+//checks if this mouse click is in a given rectangle
+bool MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
+    const float dipX = DPIScale::PixelsToDipsX(pixelX);
+    const float dipY = DPIScale::PixelsToDipsY(pixelY);
+    if (rect.left<=dipX && rect.right >=dipX && rect.top<=dipY && rect.bottom>=dipY) {
+        return true;
+    }
+    return false;
+}
+
+//handles the left button clicks
+void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
+    D2D1_SIZE_F size = pRenderTarget->GetSize();
+    if (IsInRect(pixelX, pixelY, rect1)) {
+        currentAlgLoaded = L"minDiff";
+        OnPaint();
+        //Minkowski Difference
+    }
+    else if (IsInRect(pixelX, pixelY, rect2)) {
+        currentAlgLoaded = L"minSum";
+        OnPaint();
+        //Minkowski sum
+    }
+    else if (IsInRect(pixelX, pixelY, rect3)) {
+        currentAlgLoaded = L"quickhull";
+        OnPaint();
+        //Quickhull
+    }
+    else if (IsInRect(pixelX, pixelY, rect4)) {
+        currentAlgLoaded = L"pointConvex";
+        OnPaint();
+
+        //Point Convex Hull
+    }
+    else if (IsInRect(pixelX, pixelY, rect5)) {
+        currentAlgLoaded = L"gjk";
+        OnPaint();
+        //Gjk
+    }
+}
+
+//handles all the messages given to this app from windows
 LRESULT MainWindow::HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
     case WM_CREATE:
         if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pFactory))){
-            return -1;  // Fail CreateWindowEx.
+            return -1;
         }else {
-            DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**> (&pWriteFactory));
+            DPIScale::Initialize(pFactory);
+            if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**> (&pWriteFactory)))) {
+                return -1;
+            }
         }
-        //if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**> (&pWriteFactory)))) {
-        //    return -1;
-        //}//todo here
         return 0;
-
     case WM_DESTROY:
         DiscardGraphicsResources();
+        DiscardTextResources();
         SafeRelease(&pFactory);
+        SafeRelease(&pWriteFactory);
         PostQuitMessage(0);
         return 0;
-
     case WM_PAINT:
         OnPaint();
         return 0;
-
-        // Other messages not shown...
-
     case WM_SIZE:
         Resize();
         return 0;
+    case WM_LBUTTONDOWN:
+        OnLButtonDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_LBUTTONUP://may not be necessary
+//        OnLButtonUp();
+        return 0;
+    case WM_MOUSEMOVE:
+//        OnMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), (DWORD)wParam);
+        return 0;
+    case WM_SETCURSOR://may not be necessary
+        if (LOWORD(lParam) == HTCLIENT)
+        {
+//            SetCursor(hCursor);
+            return TRUE;
+        }
+        break;
     }
     return DefWindowProc(m_hwnd, uMsg, wParam, lParam);
 }
@@ -223,7 +307,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         return 0;
     }
     ShowWindow(win.Window(), nCmdShow);
-    // Run the message loop.
     MSG msg = { };
     while (GetMessage(&msg, nullptr,  0, 0)) {
         TranslateMessage(&msg);
