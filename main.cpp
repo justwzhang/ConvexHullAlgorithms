@@ -1,12 +1,12 @@
 #include <windows.h>
 #include <Windowsx.h>
 
-#include <d2d1.h>
 #include <dwrite.h>
 #include <iostream>
 #pragma comment(lib, "Dwrite")
-#pragma comment(lib, "d2d1")
+
 #include "basewin.h"
+#include "Quickhull.h"
 
 class MainWindow : public BaseWindow<MainWindow> {
     wchar_t*           currentAlgLoaded;
@@ -18,6 +18,8 @@ class MainWindow : public BaseWindow<MainWindow> {
     ID2D1Factory* pFactory;
     ID2D1HwndRenderTarget* pRenderTarget;
     ID2D1SolidColorBrush* pBrush;
+    ID2D1SolidColorBrush* pBrushYellow;
+    ID2D1SolidColorBrush* pBrushWhite;
     //the text rectangles on the left
     D2D1_RECT_F           rect1;//Minkowski Difference
     D2D1_RECT_F           rect2;//Minkowski Sum
@@ -32,7 +34,7 @@ class MainWindow : public BaseWindow<MainWindow> {
     D2D1_POINT_2F         listLeftTop;
     D2D1_POINT_2F         listLeftBottom;
 
-    bool    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
+    BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
 
     void    CalculateLayout();
@@ -111,6 +113,8 @@ void MainWindow::CalculateLayout() {
 HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr = S_OK;
     HRESULT hr2 = S_OK;
+    HRESULT hr3 = S_OK;
+    HRESULT hr4 = S_OK;
     if (pRenderTarget == nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -119,8 +123,10 @@ HRESULT MainWindow::CreateGraphicsResources() {
         if (SUCCEEDED(hr)) {
             hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Orange), &pBrush);
             hr2 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &pTextBrush);
+            hr3 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Yellow), &pBrushYellow);
+            hr4 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrushWhite);
 
-            if (SUCCEEDED(hr)) {
+            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4)) {
                 CalculateLayout();
             }
         }
@@ -213,7 +219,7 @@ void MainWindow::Resize() {
 }
 
 //checks if this mouse click is in a given rectangle
-bool MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
+BOOL MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
     const float dipX = DPIScale::PixelsToDipsX(pixelX);
     const float dipY = DPIScale::PixelsToDipsY(pixelY);
     if (rect.left<=dipX && rect.right >=dipX && rect.top<=dipY && rect.bottom>=dipY) {
