@@ -27,6 +27,43 @@ public:
 class PointConvexhull {
 public:
 
+    //draws the basic hull and a single point which can be moved
+    //the hull should already be a known convex hull
+    static void DrawHullAndPoints(
+        vector<D2D1_ELLIPSE> hull,
+        D2D1_ELLIPSE targetPoint,
+        ID2D1HwndRenderTarget* pRenderTarget,
+        ID2D1SolidColorBrush* pBrushGreen,
+        ID2D1SolidColorBrush* pBrushWhite,
+        ID2D1SolidColorBrush* pBrushRed ){
+
+        D2D1_SIZE_F size = pRenderTarget->GetSize();
+        float minX = size.width / 3;
+        float windowWidth = size.width - minX;
+        pRenderTarget->BeginDraw();
+        for (int i = 0; i < hull.size(); i++) {
+            if (i == hull.size() - 1)
+                pRenderTarget->DrawLine(hull[i].point, hull[0].point, pBrushWhite);
+            else
+                pRenderTarget->DrawLine(hull[i].point, hull[i + 1].point, pBrushWhite);
+        }
+        if (Contains(targetPoint.point.x, targetPoint.point.y, hull, pRenderTarget)) 
+            pRenderTarget->FillEllipse(targetPoint, pBrushGreen);
+        else
+            pRenderTarget->FillEllipse(targetPoint, pBrushRed);
+        //this is kept here for the testing of contains for this input hull.
+
+        /*float maxX = size.width - minX;
+        int randX = (rand() % (int)maxX) + minX;
+        int randY = rand() % (int)size.height;
+        D2D1_ELLIPSE testEllipse = D2D1::Ellipse(D2D1::Point2F(randX, randY), 10.0, 10.0);
+        if (Contains(testEllipse.point.x, testEllipse.point.y, hull, pRenderTarget))
+            pRenderTarget->FillEllipse(testEllipse, pBrushGreen);
+        else
+            pRenderTarget->FillEllipse(testEllipse, pBrushRed);*/
+        pRenderTarget->EndDraw();
+    }
+
     //Checks if a point is in a given hull
     static bool Contains(float posX, float posY, vector<D2D1_ELLIPSE> hull, ID2D1HwndRenderTarget* pRenderTarget) {
         D2D1_ELLIPSE testEllipse = D2D1::Ellipse(D2D1::Point2F(posX, posY), 1, 1);
@@ -63,7 +100,20 @@ public:
         Vector2D normVectorTestedToPoint1 = Vector2D::Normalize(vectorFromPointTestedToPoint1);
         float dotProduct = Vector2D::dotProduct(normPerpendicular, normVectorTestedToPoint1);
 
-        return dotProduct >= 0 ? true : false;
+        return dotProduct >= 0 ? false : true;
+    }
+    //generates the same hull based on the window size
+    static vector<D2D1_ELLIPSE> CreateHull(ID2D1HwndRenderTarget* pRenderTarget) {
+        vector<D2D1_ELLIPSE> hull;
+        D2D1_SIZE_F size = pRenderTarget->GetSize();
+        float minX = size.width / 3;
+        float windowWidth = size.width - minX;
+        hull.push_back(D2D1::Ellipse(D2D1::Point2F(windowWidth*.20 + minX, size.height*.3), 10, 10));
+        hull.push_back(D2D1::Ellipse(D2D1::Point2F(size.width - windowWidth * .10, size.height * .05), 10, 10));
+        hull.push_back(D2D1::Ellipse(D2D1::Point2F(size.width - windowWidth * .05, size.height - size.height * .1), 10, 10));
+        hull.push_back(D2D1::Ellipse(D2D1::Point2F(size.width *2/3, size.height - size.height * .05), 10, 10));
+        hull.push_back(D2D1::Ellipse(D2D1::Point2F(windowWidth * .05 + minX, size.height - size.height * .1), 10, 10));
+        return hull;
     }
 
     /*These two functions may need to be changed if there is a grid available.

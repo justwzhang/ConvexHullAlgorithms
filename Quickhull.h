@@ -3,29 +3,31 @@
 #include <iterator>
 #include <iostream>
 #include <d2d1.h>
+#include "Convexhull.h"
 #pragma comment(lib, "d2d1")
 
 using namespace std;
 //a basic vector class that can store the x and y components of a vector, compute basic info such as dot product and normalization
-class Vector2D {
-public:
-    float xComponent;
-    float yComponent;
-
-    static float dotProduct(Vector2D v1, Vector2D v2) {
-        return (v1.xComponent * v2.xComponent) + (v1.yComponent * v2.yComponent);
-    }
-
-    static Vector2D Normalize(Vector2D v) {
-        float magnitude = sqrt((v.xComponent * v.xComponent) + (v.yComponent*v.yComponent));
-        v.xComponent = v.xComponent / magnitude;
-        v.yComponent = v.yComponent / magnitude;
-        return v;
-    }
-};
+//class Vector2D {
+//public:
+//    float xComponent;
+//    float yComponent;
+//
+//    static float dotProduct(Vector2D v1, Vector2D v2) {
+//        return (v1.xComponent * v2.xComponent) + (v1.yComponent * v2.yComponent);
+//    }
+//
+//    static Vector2D Normalize(Vector2D v) {
+//        float magnitude = sqrt((v.xComponent * v.xComponent) + (v.yComponent*v.yComponent));
+//        v.xComponent = v.xComponent / magnitude;
+//        v.yComponent = v.yComponent / magnitude;
+//        return v;
+//    }
+//};
 //Handles almost all of the quick hull algorithm except for the rendering
 class Quickhull{
 public:
+    //used for rendering of the hull
     static void DrawHullAndPoints(
         vector<D2D1_ELLIPSE> hull, 
         vector<D2D1_ELLIPSE> listOfTotalPoints, 
@@ -55,7 +57,6 @@ public:
     */
     static vector<D2D1_ELLIPSE> GetHull(vector<D2D1_ELLIPSE> fullListOfPoints, ID2D1HwndRenderTarget* pRenderTarget) {
         vector<D2D1_ELLIPSE> hull;
-        vector<D2D1_ELLIPSE> extremePoints;
         D2D1_ELLIPSE farthestLeft = fullListOfPoints.front();
         D2D1_ELLIPSE farthestTop = fullListOfPoints.front();
         D2D1_ELLIPSE farthestRight = fullListOfPoints.front();
@@ -75,16 +76,10 @@ public:
         hull.push_back(farthestTop);
         if(NotInHull(hull, farthestRight))
             hull.push_back(farthestRight);
-        if(NotInHull(hull,farthestLeft))
-            hull.push_back(farthestBottom);
         if(NotInHull(hull,farthestBottom))
+            hull.push_back(farthestBottom);
+        if(NotInHull(hull,farthestLeft))
             hull.push_back(farthestLeft);
-
-        extremePoints.push_back(farthestTop);
-        extremePoints.push_back(farthestRight);
-        extremePoints.push_back(farthestBottom);
-        extremePoints.push_back(farthestLeft);
-
         for (int i = 1; i < hull.size() + 1; i++) {
             if (i != hull.size()) {
                 int index = PointFarthestFromEdgeIndex(i-1, i, hull, fullListOfPoints, pRenderTarget);
@@ -128,7 +123,7 @@ public:
         for (int i = 1; i <= 9; i++) {
             int randX = (rand() % (int)maxX) + minX;
             int randY = rand() % (int)size.height;
-            D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(randX, randY), 15.0, 15.0);
+            D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(randX, randY), 10.0, 10.0);
             list.push_back(temp);
         }
         return list;

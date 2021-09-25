@@ -8,6 +8,7 @@
 #include "basewin.h"
 #include "Quickhull.h"
 
+
 class MainWindow : public BaseWindow<MainWindow> {
     wchar_t*           currentAlgLoaded;
     //tools for writing the text in the boxes
@@ -20,6 +21,8 @@ class MainWindow : public BaseWindow<MainWindow> {
     ID2D1SolidColorBrush* pBrush;
     ID2D1SolidColorBrush* pBrushYellow;
     ID2D1SolidColorBrush* pBrushWhite;
+    ID2D1SolidColorBrush* pBrushRed;
+    ID2D1SolidColorBrush* pBrushGreen;
     //the text rectangles on the left
     D2D1_RECT_F           rect1;//Minkowski Difference
     D2D1_RECT_F           rect2;//Minkowski Sum
@@ -34,8 +37,12 @@ class MainWindow : public BaseWindow<MainWindow> {
     D2D1_POINT_2F         listLeftTop;
     D2D1_POINT_2F         listLeftBottom;
     //usefull objects for each algorithm
+    //quickhull
     vector<D2D1_ELLIPSE> quickhullListOFPointsForHull;
     vector<D2D1_ELLIPSE> quickhullPointList;
+    //point convexhull
+    vector<D2D1_ELLIPSE> convexhullListOFPointsForHull;
+    D2D1_ELLIPSE         targetPoint;
 
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
@@ -118,6 +125,8 @@ HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr2 = S_OK;
     HRESULT hr3 = S_OK;
     HRESULT hr4 = S_OK;
+    HRESULT hr5 = S_OK;
+    HRESULT hr6 = S_OK;
     if (pRenderTarget == nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -128,8 +137,10 @@ HRESULT MainWindow::CreateGraphicsResources() {
             hr2 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &pTextBrush);
             hr3 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Yellow), &pBrushYellow);
             hr4 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrushWhite);
+            hr5 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), &pBrushRed);
+            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &pBrushGreen);
 
-            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4)) {
+            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6)) {
                 CalculateLayout();
             }
         }
@@ -167,6 +178,10 @@ template <class T> void SafeRelease(T** x) {
 void MainWindow::DiscardGraphicsResources() {
     SafeRelease(&pRenderTarget);
     SafeRelease(&pBrush);
+    SafeRelease(&pBrushGreen);
+    SafeRelease(&pBrushRed);
+    SafeRelease(&pBrushWhite);
+    SafeRelease(&pBrushYellow);
 }
 
 void MainWindow::DiscardTextResources() {
@@ -258,7 +273,10 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
     else if (IsInRect(pixelX, pixelY, rect4)) {
         currentAlgLoaded = L"pointConvex";
         OnPaint();
-
+        convexhullListOFPointsForHull = PointConvexhull::CreateHull(pRenderTarget);
+        D2D1_SIZE_F size = pRenderTarget->GetSize();
+        targetPoint = D2D1::Ellipse(D2D1::Point2F(2*size.width/3, size.height/2), 10, 10);
+        PointConvexhull::DrawHullAndPoints(convexhullListOFPointsForHull, targetPoint, pRenderTarget, pBrushGreen, pBrushWhite, pBrushRed);
         //Point Convex Hull
     }
     else if (IsInRect(pixelX, pixelY, rect5)) {
