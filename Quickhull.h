@@ -25,32 +25,35 @@ public:
 };
 //Handles almost all of the quick hull algorithm except for the rendering
 class Quickhull{
-private:
-    //may delete this if I decide to include the rendering in this class
-    ID2D1Factory* pFactory;
-    ID2D1HwndRenderTarget* pRenderTarget;
-    ID2D1SolidColorBrush* pBrushYellow;
-    ID2D1SolidColorBrush* pBrushWhite;
 public:
-    void Initialize( 
-        ID2D1Factory* pFactoryIn, 
-        ID2D1HwndRenderTarget* pRenderTargetIn, 
-        ID2D1SolidColorBrush* pBrushYellowIn,
-        ID2D1SolidColorBrush* pBrushWhiteIn) {
+    static void DrawHullAndPoints(
+        vector<D2D1_ELLIPSE> hull, 
+        vector<D2D1_ELLIPSE> listOfTotalPoints, 
+        ID2D1HwndRenderTarget* pRenderTarget,
+        ID2D1SolidColorBrush* pBrushYellow,
+        ID2D1SolidColorBrush* pBrushWhite) {
 
-
-        this->pFactory = pFactoryIn;
-        this->pRenderTarget = pRenderTargetIn;
-        this->pBrushYellow = pBrushYellowIn;
-        this->pBrushWhite = pBrushWhiteIn;
+        pRenderTarget->BeginDraw();
+        for (int i = 0; i < listOfTotalPoints.size(); i++) {
+            pRenderTarget->FillEllipse(listOfTotalPoints[i], pBrushYellow);
+        }
+        for (int i = 0; i < hull.size(); i++) {
+            if(i == hull.size()-1)
+                pRenderTarget->DrawLine(hull[i].point, hull[0].point, pBrushWhite);
+            else
+                pRenderTarget->DrawLine(hull[i].point, hull[i+1].point, pBrushWhite);
+        }
+        pRenderTarget->EndDraw();
     }
+
+
     //called to get the current hull given 
     /*The hull is returned in this format
     given hull is a vector<D2D1_ELLIPSE> = {1, 2, 3, 4, 5, 6} where the elements represnt points on the convex hull,
     the lines attach points i and i+1 and the last point(in this case is point 6) is attached to the first point(point 1).
     So the lines here will go 1-2-3-4-5-6-1 for this example
     */
-    vector<D2D1_ELLIPSE> GetHull(vector<D2D1_ELLIPSE> fullListOfPoints) {
+    static vector<D2D1_ELLIPSE> GetHull(vector<D2D1_ELLIPSE> fullListOfPoints, ID2D1HwndRenderTarget* pRenderTarget) {
         vector<D2D1_ELLIPSE> hull;
         vector<D2D1_ELLIPSE> extremePoints;
         D2D1_ELLIPSE farthestLeft = fullListOfPoints.front();
@@ -70,9 +73,12 @@ public:
                 farthestBottom = point;
         }
         hull.push_back(farthestTop);
-        hull.push_back(farthestRight);
-        hull.push_back(farthestBottom);
-        hull.push_back(farthestLeft);
+        if(NotInHull(hull, farthestRight))
+            hull.push_back(farthestRight);
+        if(NotInHull(hull,farthestLeft))
+            hull.push_back(farthestBottom);
+        if(NotInHull(hull,farthestBottom))
+            hull.push_back(farthestLeft);
 
         extremePoints.push_back(farthestTop);
         extremePoints.push_back(farthestRight);
@@ -81,18 +87,18 @@ public:
 
         for (int i = 1; i < hull.size() + 1; i++) {
             if (i != hull.size()) {
-                int index = PointFarthestFromEdgeIndex(i-1, i, hull, fullListOfPoints);
-                if ((index != i || index != i - 1) && (std::find(hull.begin(), hull.end(), fullListOfPoints[index]) == hull.end())) {
-                    hull.insert(hull.begin() + i + 1, fullListOfPoints[index]);
+                int index = PointFarthestFromEdgeIndex(i-1, i, hull, fullListOfPoints, pRenderTarget);
+                if ((index != -1) && NotInHull(hull, fullListOfPoints[index])) {
+                    hull.insert(hull.begin() + i, fullListOfPoints[index]);
                     if (i > 1)
                         i = i - 2;
                     else
                         i--;
                 }
             }else {
-                int index = PointFarthestFromEdgeIndex(hull.size()-1, 0, hull, fullListOfPoints);
-                if ((index != hull.size()-1 || index != 0) && (std::find(hull.begin(), hull.end(), fullListOfPoints[index]) == hull.end())) {
-                    hull.insert(hull.begin() + i + 1, fullListOfPoints[index]);
+                int index = PointFarthestFromEdgeIndex(hull.size()-1, 0, hull, fullListOfPoints, pRenderTarget);
+                if ((index != -1) && NotInHull(hull, fullListOfPoints[index])) {
+                    hull.insert(hull.begin() + i, fullListOfPoints[index]);
                     if (i > 1)
                         i = i - 2;
                     else
@@ -102,24 +108,51 @@ public:
         }
         return hull;
     }
-    //finds the point farthest from the input line (from point1 to point2), returns an input index if one is not found
-    int PointFarthestFromEdgeIndex(int indexOfP1, int indexOfP2, vector<D2D1_ELLIPSE> currentHull, vector<D2D1_ELLIPSE> pointList) {
+
+    //checks if the point is already in the hull or not
+    //can also be used for regular vectors containing ellipses
+    static bool NotInHull(vector<D2D1_ELLIPSE> hull, D2D1_ELLIPSE point) {
+        for (int i = 0; i < hull.size(); i++) {
+            if ((hull[i].point.x == point.point.x) && (hull[i].point.y == point.point.y))
+                return false;
+        }
+        return true;
+    }
+    //generates a random hull with 9 points
+    static vector<D2D1_ELLIPSE> GeneratePointList(ID2D1HwndRenderTarget* pRenderTarget) {
+        D2D1_SIZE_F size = pRenderTarget->GetSize();
+        float minX = size.width / 3;
+        float maxX = size.width - minX;
+        float maxY = size.height ;
+        vector<D2D1_ELLIPSE> list;
+        for (int i = 1; i <= 9; i++) {
+            int randX = (rand() % (int)maxX) + minX;
+            int randY = rand() % (int)size.height;
+            D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(randX, randY), 15.0, 15.0);
+            list.push_back(temp);
+        }
+        return list;
+    }
+
+    //finds the point farthest from the input line (from point1 to point2), returns -1 if one is not found
+    //Look at the tb to understand the forloop if necessary
+    static int PointFarthestFromEdgeIndex(int indexOfP1, int indexOfP2, vector<D2D1_ELLIPSE> currentHull, vector<D2D1_ELLIPSE> pointList, ID2D1HwndRenderTarget* pRenderTarget) {
         D2D1_ELLIPSE point1 = currentHull[indexOfP1];
         D2D1_ELLIPSE point2 = currentHull[indexOfP2];
         Vector2D originalVector, perpendicularVector;
-        originalVector.xComponent = GetXComponent(point1, point2);
-        originalVector.yComponent = GetYComponent(point1, point2);
+        originalVector.xComponent = GetXComponent(point1, point2, pRenderTarget);
+        originalVector.yComponent = GetYComponent(point1, point2, pRenderTarget);
         perpendicularVector.xComponent = originalVector.yComponent == 0 ? 0 : originalVector.yComponent * -1;
         perpendicularVector.yComponent = originalVector.xComponent;
 
-        int bestIndex = indexOfP1;
+        int bestIndex = -1;
         float maxVal = -2;
         float rightMostValue = -2;
 
         for (int i = 0; i < pointList.size(); i++) {
             Vector2D vectorFromPointiToPoint1;
-            vectorFromPointiToPoint1.xComponent = GetXComponent(point1, pointList[i]);
-            vectorFromPointiToPoint1.yComponent = GetYComponent(point1, pointList[i]);
+            vectorFromPointiToPoint1.xComponent = GetXComponent(pointList[i], point1,  pRenderTarget);
+            vectorFromPointiToPoint1.yComponent = GetYComponent(pointList[i], point1,  pRenderTarget);
             Vector2D normOriginal = Vector2D::Normalize(originalVector);
             Vector2D normPerpendicular = Vector2D::Normalize(perpendicularVector);
             Vector2D normVectoriToPoint1 = Vector2D::Normalize(vectorFromPointiToPoint1);
@@ -140,15 +173,15 @@ public:
     */
 
     //gets the x compnent relative to the center of the right 2/3 of the screen which is the alocated area of the gui
-    float GetXComponent(D2D1_ELLIPSE startPt, D2D1_ELLIPSE endPt) {
+    static float GetXComponent(D2D1_ELLIPSE startPt, D2D1_ELLIPSE endPt, ID2D1HwndRenderTarget* pRenderTarget) {
         D2D1_SIZE_F size = pRenderTarget->GetSize();
-        float xOrigin = 2 * size.width / 3;
+        float xOrigin = 2 * (size.width / 3);
         return ((endPt.point.x-xOrigin) - (startPt.point.x-xOrigin));
 
 
     }
     //gets the y compnent relative to the center of the right 2/3 of the screen which is the alocated area of the gui
-    float GetYComponent(D2D1_ELLIPSE startPt, D2D1_ELLIPSE endPt) {
+    static float GetYComponent(D2D1_ELLIPSE startPt, D2D1_ELLIPSE endPt, ID2D1HwndRenderTarget* pRenderTarget) {
         D2D1_SIZE_F size = pRenderTarget->GetSize();
         float yOrigin = size.height / 2;
         return ((endPt.point.y - yOrigin) - (startPt.point.y - yOrigin));

@@ -33,6 +33,9 @@ class MainWindow : public BaseWindow<MainWindow> {
     D2D1_POINT_2F         bottomRight;
     D2D1_POINT_2F         listLeftTop;
     D2D1_POINT_2F         listLeftBottom;
+    //usefull objects for each algorithm
+    vector<D2D1_ELLIPSE> quickhullListOFPointsForHull;
+    vector<D2D1_ELLIPSE> quickhullPointList;
 
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
@@ -206,6 +209,9 @@ void MainWindow::OnPaint() {
 
 //called when the window size is changed
 void MainWindow::Resize() {
+    if (currentAlgLoaded == L"quickhull") {
+        Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
+    }
     if (pRenderTarget != nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -244,6 +250,9 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
     else if (IsInRect(pixelX, pixelY, rect3)) {
         currentAlgLoaded = L"quickhull";
         OnPaint();
+        quickhullPointList = Quickhull::GeneratePointList(pRenderTarget);
+        quickhullListOFPointsForHull = Quickhull::GetHull(quickhullPointList, pRenderTarget);
+        Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
         //Quickhull
     }
     else if (IsInRect(pixelX, pixelY, rect4)) {
