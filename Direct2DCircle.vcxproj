@@ -179,6 +179,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="basewin.h" />
+    <ClInclude Include="Convexhull.h" />
     <ClInclude Include="Quickhull.h" />
   </ItemGroup>
   <ItemGroup>
