@@ -7,6 +7,8 @@
 
 #include "basewin.h"
 #include "Quickhull.h"
+#include "MinkowskiSum.h"
+#include "MinkowskiDifference.h"
 
 
 class MainWindow : public BaseWindow<MainWindow> {
@@ -23,6 +25,7 @@ class MainWindow : public BaseWindow<MainWindow> {
     ID2D1SolidColorBrush* pBrushWhite;
     ID2D1SolidColorBrush* pBrushRed;
     ID2D1SolidColorBrush* pBrushGreen;
+    ID2D1SolidColorBrush* pBrushGray;
     //the text rectangles on the left
     D2D1_RECT_F           rect1;//Minkowski Difference
     D2D1_RECT_F           rect2;//Minkowski Sum
@@ -36,6 +39,10 @@ class MainWindow : public BaseWindow<MainWindow> {
     D2D1_POINT_2F         bottomRight;
     D2D1_POINT_2F         listLeftTop;
     D2D1_POINT_2F         listLeftBottom;
+    D2D1_POINT_2F         lineTop;
+    D2D1_POINT_2F         lineBottom;
+    D2D1_POINT_2F         lineLeft;
+    D2D1_POINT_2F         lineRight;
     //usefull objects for each algorithm
     //quickhull
     vector<D2D1_ELLIPSE> quickhullListOFPointsForHull;
@@ -43,11 +50,26 @@ class MainWindow : public BaseWindow<MainWindow> {
     //point convexhull
     vector<D2D1_ELLIPSE> convexhullListOFPointsForHull;
     D2D1_ELLIPSE         targetPoint;
+    //min sum
+    vector<D2D1_ELLIPSE> minSumListOFPointsForHull;
+    vector<D2D1_ELLIPSE> minSumPointList;
+    vector<D2D1_ELLIPSE> minSumListOFPointsForHull2;
+    vector<D2D1_ELLIPSE> minSumPointList2;
+    vector<D2D1_ELLIPSE> minSumListOFPointsForHullTotal;
+    vector<D2D1_ELLIPSE> minSumPointListTotal;
+    //min diff
+    vector<D2D1_ELLIPSE> minDiffListOFPointsForHull;
+    vector<D2D1_ELLIPSE> minDiffPointList;
+    vector<D2D1_ELLIPSE> minDiffListOFPointsForHull2;
+    vector<D2D1_ELLIPSE> minDiffPointList2;
+    vector<D2D1_ELLIPSE> minDiffListOFPointsForHullTotal;
+    vector<D2D1_ELLIPSE> minDiffPointListTotal;
 
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
 
     void    CalculateLayout();
+    void    MakeGrid();
     HRESULT CreateTextResources();
     HRESULT CreateGraphicsResources();
     void    DiscardTextResources();
@@ -119,6 +141,58 @@ void MainWindow::CalculateLayout() {
     }
 }
 
+void MainWindow::MakeGrid() {
+    if (pRenderTarget != nullptr) {
+        D2D1_SIZE_F size = pRenderTarget->GetSize();
+        const float farthestX = size.width / 3;
+        const float xSpace = (size.width / 3) * .025;
+        const float smallestX = xSpace;
+        const float largestX = farthestX - xSpace;
+
+        const float ySize = size.height * .1;
+        const float ySpace = size.height * .05;
+        const float y1 = ySpace;
+        const float y2 = y1 + ySpace + ySize;
+        const float y3 = y2 + ySpace + ySize;
+        const float y4 = y3 + ySpace + ySize;
+        const float y5 = y4 + ySpace + ySize;
+
+        topLeft = D2D1::Point2F(0, 0);
+        topRight = D2D1::Point2F(size.width, 0);
+        bottomLeft = D2D1::Point2F(0, size.height);
+        bottomRight = D2D1::Point2F(size.width, size.height);
+
+        listLeftTop = D2D1::Point2F(farthestX, 0);
+        listLeftBottom = D2D1::Point2F(farthestX, size.height);
+
+        int j = 0;
+        for (float i = farthestX; i <= size.width; i += (size.width - farthestX) / 50) {
+            pRenderTarget->BeginDraw();
+            lineTop = D2D1::Point2F(i, 0);
+            lineBottom = D2D1::Point2F(i, size.height);
+            if (j == 25)
+                pRenderTarget->DrawLine(lineTop, lineBottom, pBrush);
+            else
+                pRenderTarget->DrawLine(lineTop, lineBottom, pBrushGray);
+            pRenderTarget->EndDraw();
+            j++;
+        }
+
+        j = 0;
+        for (float i = 0; i <= size.height; i += size.height/ 50) {
+            pRenderTarget->BeginDraw();
+            lineLeft = D2D1::Point2F(farthestX, i);
+            lineRight = D2D1::Point2F(size.width, i);
+            if (j == 25)
+                pRenderTarget->DrawLine(lineLeft, lineRight, pBrush);
+            else
+                pRenderTarget->DrawLine(lineLeft, lineRight, pBrushGray);
+            pRenderTarget->EndDraw();
+            j++;
+        }
+    }
+}
+
 //handels the initialization of the pRenderTarget
 HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr = S_OK;
@@ -139,6 +213,7 @@ HRESULT MainWindow::CreateGraphicsResources() {
             hr4 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrushWhite);
             hr5 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), &pBrushRed);
             hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &pBrushGreen);
+            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &pBrushGray);
 
             if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6)) {
                 CalculateLayout();
@@ -179,6 +254,7 @@ void MainWindow::DiscardGraphicsResources() {
     SafeRelease(&pRenderTarget);
     SafeRelease(&pBrush);
     SafeRelease(&pBrushGreen);
+    SafeRelease(&pBrushGray);
     SafeRelease(&pBrushRed);
     SafeRelease(&pBrushWhite);
     SafeRelease(&pBrushYellow);
@@ -249,18 +325,39 @@ BOOL MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
     return false;
 }
 
+
 //handles the left button clicks
 void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
     D2D1_SIZE_F size = pRenderTarget->GetSize();
     if (IsInRect(pixelX, pixelY, rect1)) {
         currentAlgLoaded = L"minDiff";
         OnPaint();
+        MakeGrid();
+        minDiffPointList = MinkowskiDifference::GeneratePointList(pRenderTarget);
+        minDiffListOFPointsForHull = MinkowskiDifference::GetHull(minDiffPointList, pRenderTarget);
+        MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull, minDiffPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+        minDiffPointList2 = MinkowskiDifference::GeneratePointList2(pRenderTarget);
+        minDiffListOFPointsForHull2 = MinkowskiDifference::GetHull(minDiffPointList2, pRenderTarget);
+        MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull2, minDiffPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+        minDiffPointListTotal = MinkowskiDifference::GeneratePointListTotal(minDiffPointList, minDiffPointList2, pRenderTarget);
+        minDiffListOFPointsForHullTotal = MinkowskiDifference::GetHull(minDiffPointListTotal, pRenderTarget);
+        MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
         //Minkowski Difference
     }
     else if (IsInRect(pixelX, pixelY, rect2)) {
         currentAlgLoaded = L"minSum";
         OnPaint();
-        //Minkowski sum
+        MakeGrid();
+        minSumPointList = MinkowskiSum::GeneratePointList(pRenderTarget);
+        minSumListOFPointsForHull = MinkowskiSum::GetHull(minSumPointList, pRenderTarget);
+        MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull, minSumPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+        minSumPointList2 = MinkowskiSum::GeneratePointList2(pRenderTarget);
+        minSumListOFPointsForHull2 = MinkowskiSum::GetHull(minSumPointList2, pRenderTarget);
+        MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull2, minSumPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+        minSumPointListTotal = MinkowskiSum::GeneratePointListTotal(minSumPointList, minSumPointList2, pRenderTarget);
+        minSumListOFPointsForHullTotal = MinkowskiSum::GetHull(minSumPointListTotal, pRenderTarget);
+        MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
+        //Minkowski Sum
     }
     else if (IsInRect(pixelX, pixelY, rect3)) {
         currentAlgLoaded = L"quickhull";
@@ -282,6 +379,7 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
     else if (IsInRect(pixelX, pixelY, rect5)) {
         currentAlgLoaded = L"gjk";
         OnPaint();
+        MakeGrid();
         //Gjk
     }
 }
