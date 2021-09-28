@@ -9,6 +9,7 @@
 #include "Quickhull.h"
 #include "MinkowskiSum.h"
 #include "MinkowskiDifference.h"
+#include "GJK.h"
 
 
 class MainWindow : public BaseWindow<MainWindow> {
@@ -25,6 +26,7 @@ class MainWindow : public BaseWindow<MainWindow> {
     ID2D1SolidColorBrush* pBrushWhite;
     ID2D1SolidColorBrush* pBrushRed;
     ID2D1SolidColorBrush* pBrushGreen;
+    ID2D1SolidColorBrush* pBrushPurple;
     ID2D1SolidColorBrush* pBrushGray;
     //the text rectangles on the left
     D2D1_RECT_F           rect1;//Minkowski Difference
@@ -64,6 +66,14 @@ class MainWindow : public BaseWindow<MainWindow> {
     vector<D2D1_ELLIPSE> minDiffPointList2;
     vector<D2D1_ELLIPSE> minDiffListOFPointsForHullTotal;
     vector<D2D1_ELLIPSE> minDiffPointListTotal;
+    //gjk
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHull;
+    vector<D2D1_ELLIPSE> gjkPointList;
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHull2;
+    vector<D2D1_ELLIPSE> gjkPointList2;
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHullTotal;
+    vector<D2D1_ELLIPSE> gjkPointListTotal;
+    bool intersect;
 
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
@@ -166,30 +176,30 @@ void MainWindow::MakeGrid() {
         listLeftBottom = D2D1::Point2F(farthestX, size.height);
 
         int j = 0;
+        pRenderTarget->BeginDraw();
         for (float i = farthestX; i <= size.width; i += (size.width - farthestX) / 50) {
-            pRenderTarget->BeginDraw();
             lineTop = D2D1::Point2F(i, 0);
             lineBottom = D2D1::Point2F(i, size.height);
             if (j == 25)
                 pRenderTarget->DrawLine(lineTop, lineBottom, pBrush);
             else
                 pRenderTarget->DrawLine(lineTop, lineBottom, pBrushGray);
-            pRenderTarget->EndDraw();
             j++;
         }
+        pRenderTarget->EndDraw();
 
         j = 0;
+        pRenderTarget->BeginDraw();
         for (float i = 0; i <= size.height; i += size.height/ 50) {
-            pRenderTarget->BeginDraw();
             lineLeft = D2D1::Point2F(farthestX, i);
             lineRight = D2D1::Point2F(size.width, i);
             if (j == 25)
                 pRenderTarget->DrawLine(lineLeft, lineRight, pBrush);
             else
                 pRenderTarget->DrawLine(lineLeft, lineRight, pBrushGray);
-            pRenderTarget->EndDraw();
             j++;
         }
+        pRenderTarget->EndDraw();
     }
 }
 
@@ -201,6 +211,7 @@ HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr4 = S_OK;
     HRESULT hr5 = S_OK;
     HRESULT hr6 = S_OK;
+    HRESULT hr7 = S_OK;
     if (pRenderTarget == nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -213,9 +224,10 @@ HRESULT MainWindow::CreateGraphicsResources() {
             hr4 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrushWhite);
             hr5 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), &pBrushRed);
             hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &pBrushGreen);
-            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &pBrushGray);
+            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Purple), &pBrushPurple);
+            hr7 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &pBrushGray);
 
-            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6)) {
+            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6) && SUCCEEDED(hr7)) {
                 CalculateLayout();
             }
         }
@@ -254,10 +266,11 @@ void MainWindow::DiscardGraphicsResources() {
     SafeRelease(&pRenderTarget);
     SafeRelease(&pBrush);
     SafeRelease(&pBrushGreen);
-    SafeRelease(&pBrushGray);
+    SafeRelease(&pBrushPurple);
     SafeRelease(&pBrushRed);
     SafeRelease(&pBrushWhite);
     SafeRelease(&pBrushYellow);
+    SafeRelease(&pBrushGray);
 }
 
 void MainWindow::DiscardTextResources() {
@@ -380,6 +393,17 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
         currentAlgLoaded = L"gjk";
         OnPaint();
         MakeGrid();
+        gjkPointList = GJK::GeneratePointList(pRenderTarget);
+        gjkListOFPointsForHull = GJK::GetHull(gjkPointList, pRenderTarget);
+        GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+        gjkPointList2 = GJK::GeneratePointList2(pRenderTarget);
+        gjkListOFPointsForHull2 = GJK::GetHull(gjkPointList2, pRenderTarget);
+        GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+        //intersection comparison
+        intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+        gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+        gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+        GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
         //Gjk
     }
 }

@@ -123,9 +123,9 @@ public:
         float maxY = size.height;
         vector<D2D1_ELLIPSE> list;
         for (int i = 1; i <= 6; i++) {
-            int randnumX = rand() % 10;
-            float randX = (randnumX + 10) * (maxX / 50) + minX;
-            int randnumY = rand() % 10;
+            int randnumX = rand() % 15;
+            float randX = (randnumX + 15) * (maxX / 50) + minX;
+            int randnumY = rand() % 20;
             float randY = (randnumY + 25) * (maxY / 50);
             D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(randX, randY), 10.0, 10.0);
             list.push_back(temp);
@@ -141,10 +141,10 @@ public:
         float maxY = size.height;
         vector<D2D1_ELLIPSE> list;
         for (int i = 1; i <= 6; i++) {
-            int randnumX = rand() % 10;
-            float randX = (randnumX + 30) * (maxX / 50) + minX;
+            int randnumX = rand() % 15;
+            float randX = (randnumX + 25) * (maxX / 50) + minX;
             int randnumY = rand() % 10;
-            float randY = (randnumY + 35) * (maxY / 50);
+            float randY = (randnumY + 15) * (maxY / 50);
             D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(randX, randY), 10.0, 10.0);
             list.push_back(temp);
         }
@@ -158,8 +158,8 @@ public:
         float minX = size.width / 3;
         float maxX = size.width - minX;
         float maxY = size.height;
-        float originX = maxX / 2;
-        float originY = maxY / 2;
+        float originX = 25 * (maxX / 50) + minX;
+        float originY = size.height / 2;
         //origin = (MaxX/2, MaxY/2)
         for (int i = 0; i < list.size(); i++) {
             for (int j = 0; j < list2.size(); j++) {
@@ -167,7 +167,7 @@ public:
                 float distOrigY = list[i].point.y - originY;
                 float distOrigX2 = list2[j].point.x - originX;
                 float distOrigY2 = list2[j].point.y - originY;
-                float pointXAdded = originY + (distOrigX2 - distOrigX);
+                float pointXAdded = originX + (distOrigX - distOrigX2);
                 float pointYAdded = originY + (distOrigY - distOrigY2);
                 D2D1_ELLIPSE temp = D2D1::Ellipse(D2D1::Point2F(pointXAdded, pointYAdded), 0.0, 0.0);
                 listTotal.push_back(temp);
