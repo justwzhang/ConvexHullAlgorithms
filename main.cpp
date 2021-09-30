@@ -9,10 +9,11 @@
 #include "Quickhull.h"
 #include "MinkowskiSum.h"
 #include "MinkowskiDifference.h"
+#include "GJK.h"
 
 
 class MainWindow : public BaseWindow<MainWindow> {
-    wchar_t*           currentAlgLoaded;
+    int          currentAlgLoaded;
     //tools for writing the text in the boxes
     IDWriteFactory* pWriteFactory;
     ID2D1SolidColorBrush* pTextBrush;
@@ -20,11 +21,14 @@ class MainWindow : public BaseWindow<MainWindow> {
     //tools for drawing everything
     ID2D1Factory* pFactory;
     ID2D1HwndRenderTarget* pRenderTarget;
+    D2D1_POINT_2F oldMousePos;
+
     ID2D1SolidColorBrush* pBrush;
     ID2D1SolidColorBrush* pBrushYellow;
     ID2D1SolidColorBrush* pBrushWhite;
     ID2D1SolidColorBrush* pBrushRed;
     ID2D1SolidColorBrush* pBrushGreen;
+    ID2D1SolidColorBrush* pBrushPurple;
     ID2D1SolidColorBrush* pBrushGray;
     //the text rectangles on the left
     D2D1_RECT_F           rect1;//Minkowski Difference
@@ -64,7 +68,19 @@ class MainWindow : public BaseWindow<MainWindow> {
     vector<D2D1_ELLIPSE> minDiffPointList2;
     vector<D2D1_ELLIPSE> minDiffListOFPointsForHullTotal;
     vector<D2D1_ELLIPSE> minDiffPointListTotal;
+    //gjk
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHull;
+    vector<D2D1_ELLIPSE> gjkPointList;
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHull2;
+    vector<D2D1_ELLIPSE> gjkPointList2;
+    vector<D2D1_ELLIPSE> gjkListOFPointsForHullTotal;
+    vector<D2D1_ELLIPSE> gjkPointListTotal;
+    bool intersect;
 
+    int selectionIndex;
+
+    BOOL    HitDetectEllipse(int mouseX, int mouseY, vector<D2D1_ELLIPSE> listOfPoints);
+    BOOL    HitDetectHull(int mouseX, int mouseY, vector<D2D1_ELLIPSE> hull);
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
 
@@ -76,6 +92,8 @@ class MainWindow : public BaseWindow<MainWindow> {
     void    DiscardGraphicsResources();
     void    OnPaint();
     void    Resize();
+    void    OnMouseMove(int pixelX, int pixelY, DWORD flags);
+    vector<D2D1_ELLIPSE> MoveHull(int dipX, int dipY, vector<D2D1_ELLIPSE>hull);
 
 public:
 
@@ -166,30 +184,30 @@ void MainWindow::MakeGrid() {
         listLeftBottom = D2D1::Point2F(farthestX, size.height);
 
         int j = 0;
+        pRenderTarget->BeginDraw();
         for (float i = farthestX; i <= size.width; i += (size.width - farthestX) / 50) {
-            pRenderTarget->BeginDraw();
             lineTop = D2D1::Point2F(i, 0);
             lineBottom = D2D1::Point2F(i, size.height);
             if (j == 25)
                 pRenderTarget->DrawLine(lineTop, lineBottom, pBrush);
             else
                 pRenderTarget->DrawLine(lineTop, lineBottom, pBrushGray);
-            pRenderTarget->EndDraw();
             j++;
         }
+        pRenderTarget->EndDraw();
 
         j = 0;
+        pRenderTarget->BeginDraw();
         for (float i = 0; i <= size.height; i += size.height/ 50) {
-            pRenderTarget->BeginDraw();
             lineLeft = D2D1::Point2F(farthestX, i);
             lineRight = D2D1::Point2F(size.width, i);
             if (j == 25)
                 pRenderTarget->DrawLine(lineLeft, lineRight, pBrush);
             else
                 pRenderTarget->DrawLine(lineLeft, lineRight, pBrushGray);
-            pRenderTarget->EndDraw();
             j++;
         }
+        pRenderTarget->EndDraw();
     }
 }
 
@@ -201,6 +219,7 @@ HRESULT MainWindow::CreateGraphicsResources() {
     HRESULT hr4 = S_OK;
     HRESULT hr5 = S_OK;
     HRESULT hr6 = S_OK;
+    HRESULT hr7 = S_OK;
     if (pRenderTarget == nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -213,9 +232,10 @@ HRESULT MainWindow::CreateGraphicsResources() {
             hr4 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrushWhite);
             hr5 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), &pBrushRed);
             hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &pBrushGreen);
-            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &pBrushGray);
+            hr6 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Purple), &pBrushPurple);
+            hr7 = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &pBrushGray);
 
-            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6)) {
+            if (SUCCEEDED(hr) && SUCCEEDED(hr2) && SUCCEEDED(hr3) && SUCCEEDED(hr4) && SUCCEEDED(hr5) && SUCCEEDED(hr6) && SUCCEEDED(hr7)) {
                 CalculateLayout();
             }
         }
@@ -254,10 +274,11 @@ void MainWindow::DiscardGraphicsResources() {
     SafeRelease(&pRenderTarget);
     SafeRelease(&pBrush);
     SafeRelease(&pBrushGreen);
-    SafeRelease(&pBrushGray);
+    SafeRelease(&pBrushPurple);
     SafeRelease(&pBrushRed);
     SafeRelease(&pBrushWhite);
     SafeRelease(&pBrushYellow);
+    SafeRelease(&pBrushGray);
 }
 
 void MainWindow::DiscardTextResources() {
@@ -300,9 +321,9 @@ void MainWindow::OnPaint() {
 
 //called when the window size is changed
 void MainWindow::Resize() {
-    if (currentAlgLoaded == L"quickhull") {
+    /*if (currentAlgLoaded == L"quickhull") {
         Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
-    }
+    }*/
     if (pRenderTarget != nullptr) {
         RECT rc;
         GetClientRect(m_hwnd, &rc);
@@ -325,12 +346,38 @@ BOOL MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
     return false;
 }
 
+BOOL MainWindow::HitDetectEllipse(int mouseX, int mouseY, vector<D2D1_ELLIPSE> list) {
+    const float dipX = DPIScale::PixelsToDipsX(mouseX);
+    const float dipY = DPIScale::PixelsToDipsY(mouseY);
+    for (int i = 0; i < list.size(); i++) {
+        const float a = list[i].radiusX;
+        const float b = list[i].radiusY;
+        const float x1 = dipX - list[i].point.x;
+        const float y1 = dipY - list[i].point.y;
+        const float d = ((x1 * x1) / (a * a)) + ((y1 * y1) / (b * b));
+        if (d <= 1.0f) {
+            selectionIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+BOOL MainWindow::HitDetectHull(int mouseX, int mouseY, vector<D2D1_ELLIPSE> hull) {
+    const float dipX = DPIScale::PixelsToDipsX(mouseX);
+    const float dipY = DPIScale::PixelsToDipsY(mouseY);
+    return PointConvexhull::Contains(dipX, dipY, hull, pRenderTarget);
+}
 
 //handles the left button clicks
 void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
     D2D1_SIZE_F size = pRenderTarget->GetSize();
+    const float dipX = DPIScale::PixelsToDipsX(pixelX);
+    const float dipY = DPIScale::PixelsToDipsY(pixelY);
+    oldMousePos.x = dipX;
+    oldMousePos.y = dipY;
     if (IsInRect(pixelX, pixelY, rect1)) {
-        currentAlgLoaded = L"minDiff";
+        currentAlgLoaded = 1;
         OnPaint();
         MakeGrid();
         minDiffPointList = MinkowskiDifference::GeneratePointList(pRenderTarget);
@@ -345,7 +392,7 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
         //Minkowski Difference
     }
     else if (IsInRect(pixelX, pixelY, rect2)) {
-        currentAlgLoaded = L"minSum";
+        currentAlgLoaded = 2;
         OnPaint();
         MakeGrid();
         minSumPointList = MinkowskiSum::GeneratePointList(pRenderTarget);
@@ -360,7 +407,7 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
         //Minkowski Sum
     }
     else if (IsInRect(pixelX, pixelY, rect3)) {
-        currentAlgLoaded = L"quickhull";
+        currentAlgLoaded = 3;
         OnPaint();
         quickhullPointList = Quickhull::GeneratePointList(pRenderTarget);
         quickhullListOFPointsForHull = Quickhull::GetHull(quickhullPointList, pRenderTarget);
@@ -368,7 +415,7 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
         //Quickhull
     }
     else if (IsInRect(pixelX, pixelY, rect4)) {
-        currentAlgLoaded = L"pointConvex";
+        currentAlgLoaded = 4;
         OnPaint();
         convexhullListOFPointsForHull = PointConvexhull::CreateHull(pRenderTarget);
         D2D1_SIZE_F size = pRenderTarget->GetSize();
@@ -377,11 +424,250 @@ void MainWindow::OnLButtonDown(int pixelX, int pixelY) {
         //Point Convex Hull
     }
     else if (IsInRect(pixelX, pixelY, rect5)) {
-        currentAlgLoaded = L"gjk";
+        currentAlgLoaded = 5;
         OnPaint();
         MakeGrid();
+        gjkPointList = GJK::GeneratePointList(pRenderTarget);
+        gjkListOFPointsForHull = GJK::GetHull(gjkPointList, pRenderTarget);
+        GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+        gjkPointList2 = GJK::GeneratePointList2(pRenderTarget);
+        gjkListOFPointsForHull2 = GJK::GetHull(gjkPointList2, pRenderTarget);
+        GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+        //intersection comparison
+        intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+        gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+        gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+        GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
         //Gjk
     }
+
+
+}
+
+void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
+    const float dipX = DPIScale::PixelsToDipsX(pixelX);
+    const float dipY = DPIScale::PixelsToDipsY(pixelY);
+    if (currentAlgLoaded == 1) {//mindiff
+        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                minDiffPointList[selectionIndex].point.x = dipX;
+                minDiffPointList[selectionIndex].point.y = dipY;
+                minDiffListOFPointsForHull = MinkowskiDifference::GetHull(minDiffPointList, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull, minDiffPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull2, minDiffPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                minDiffPointListTotal = MinkowskiDifference::GeneratePointListTotal(minDiffPointList, minDiffPointList2, pRenderTarget);
+                minDiffListOFPointsForHullTotal = MinkowskiDifference::GetHull(minDiffPointListTotal, pRenderTarget);
+                MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
+            }
+        }
+        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList2)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                minDiffPointList2[selectionIndex].point.x = dipX;
+                minDiffPointList2[selectionIndex].point.y = dipY;
+                minDiffListOFPointsForHull2 = MinkowskiDifference::GetHull(minDiffPointList2, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull, minDiffPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull2, minDiffPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                minDiffPointListTotal = MinkowskiDifference::GeneratePointListTotal(minDiffPointList, minDiffPointList2, pRenderTarget);
+                minDiffListOFPointsForHullTotal = MinkowskiDifference::GetHull(minDiffPointListTotal, pRenderTarget);
+                MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
+            }
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull) && selectionIndex == -1) {
+            minDiffPointList = MoveHull(dipX, dipY, minDiffPointList);
+            OnPaint();
+            MakeGrid();
+            minDiffListOFPointsForHull = MinkowskiDifference::GetHull(minDiffPointList, pRenderTarget);
+            MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull, minDiffPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull2, minDiffPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+            
+            minDiffPointListTotal = MinkowskiDifference::GeneratePointListTotal(minDiffPointList, minDiffPointList2, pRenderTarget);
+            minDiffListOFPointsForHullTotal = MinkowskiDifference::GetHull(minDiffPointListTotal, pRenderTarget);
+            MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
+
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull2) && selectionIndex == -1) {
+            minDiffPointList2 = MoveHull(dipX, dipY, minDiffPointList2);
+            OnPaint();
+            MakeGrid();
+            minDiffListOFPointsForHull2 = MinkowskiDifference::GetHull(minDiffPointList2, pRenderTarget);
+            MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull, minDiffPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            MinkowskiDifference::DrawHullAndPoints(minDiffListOFPointsForHull2, minDiffPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+            
+            minDiffPointListTotal = MinkowskiDifference::GeneratePointListTotal(minDiffPointList, minDiffPointList2, pRenderTarget);
+            minDiffListOFPointsForHullTotal = MinkowskiDifference::GetHull(minDiffPointListTotal, pRenderTarget);
+            MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
+
+        }
+    }
+    else if (currentAlgLoaded == 2) {//minsum
+        if (HitDetectEllipse(pixelX, pixelY, minSumPointList)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                minSumPointList[selectionIndex].point.x = dipX;
+                minSumPointList[selectionIndex].point.y = dipY;
+                minSumListOFPointsForHull = MinkowskiSum::GetHull(minSumPointList, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull, minSumPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull2, minSumPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                minSumPointListTotal = MinkowskiSum::GeneratePointListTotal(minSumPointList, minSumPointList2, pRenderTarget);
+                minSumListOFPointsForHullTotal = MinkowskiSum::GetHull(minSumPointListTotal, pRenderTarget);
+                MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
+            }
+        }
+        if (HitDetectEllipse(pixelX, pixelY, minSumPointList2)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                minSumPointList2[selectionIndex].point.x = dipX;
+                minSumPointList2[selectionIndex].point.y = dipY;
+                minSumListOFPointsForHull2 = MinkowskiSum::GetHull(minSumPointList2, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull, minSumPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull2, minSumPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                minSumPointListTotal = MinkowskiSum::GeneratePointListTotal(minSumPointList, minSumPointList2, pRenderTarget);
+                minSumListOFPointsForHullTotal = MinkowskiSum::GetHull(minSumPointListTotal, pRenderTarget);
+                MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
+            }
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull) && selectionIndex == -1) {
+            minSumPointList = MoveHull(dipX, dipY, minSumPointList);
+            OnPaint();
+            MakeGrid();
+            minSumListOFPointsForHull = MinkowskiSum::GetHull(minSumPointList, pRenderTarget);
+            MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull, minSumPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull2, minSumPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+            
+            minSumPointListTotal = MinkowskiSum::GeneratePointListTotal(minSumPointList, minSumPointList2, pRenderTarget);
+            minSumListOFPointsForHullTotal = MinkowskiSum::GetHull(minSumPointListTotal, pRenderTarget);
+            MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
+
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull2) && selectionIndex == -1) {
+            minSumPointList2 = MoveHull(dipX, dipY, minSumPointList2);
+            OnPaint();
+            MakeGrid();
+            minSumListOFPointsForHull2 = MinkowskiSum::GetHull(minSumPointList2, pRenderTarget);
+            MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull, minSumPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            MinkowskiSum::DrawHullAndPoints(minSumListOFPointsForHull2, minSumPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+            
+            minSumPointListTotal = MinkowskiSum::GeneratePointListTotal(minSumPointList, minSumPointList2, pRenderTarget);
+            minSumListOFPointsForHullTotal = MinkowskiSum::GetHull(minSumPointListTotal, pRenderTarget);
+            MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
+        }
+    }
+    else if (currentAlgLoaded == 3) {//quickhull
+        if (HitDetectEllipse(pixelX, pixelY, quickhullPointList)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                quickhullPointList[selectionIndex].point.x = dipX;
+                quickhullPointList[selectionIndex].point.y = dipY;
+                OnPaint();
+                quickhullListOFPointsForHull = Quickhull::GetHull(quickhullPointList, pRenderTarget);
+                Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
+            }  
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, quickhullListOFPointsForHull) && selectionIndex == -1) {
+            quickhullPointList = MoveHull(dipX, dipY, quickhullPointList);
+            quickhullListOFPointsForHull = Quickhull::GetHull(quickhullPointList, pRenderTarget);
+            OnPaint();
+            Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
+
+        }
+    }
+    else if (currentAlgLoaded == 4) {//convexhull
+        vector<D2D1_ELLIPSE> temp;
+        temp.push_back(targetPoint);
+        if (HitDetectEllipse(pixelX, pixelY, temp)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                targetPoint.point.x = dipX;
+                targetPoint.point.y = dipY;
+                OnPaint();
+                PointConvexhull::DrawHullAndPoints(convexhullListOFPointsForHull, targetPoint, pRenderTarget, pBrushGreen, pBrushWhite, pBrushRed);
+            }
+        }
+        else if ((flags & MK_LBUTTON) &&HitDetectHull(pixelX, pixelY, convexhullListOFPointsForHull) && selectionIndex == -1) {
+            convexhullListOFPointsForHull = MoveHull(dipX, dipY, convexhullListOFPointsForHull);
+            OnPaint();
+            PointConvexhull::DrawHullAndPoints(convexhullListOFPointsForHull, targetPoint, pRenderTarget, pBrushGreen, pBrushWhite, pBrushRed);
+
+        }
+    }
+    else if (currentAlgLoaded ==5 ) {
+        if (HitDetectEllipse(pixelX, pixelY, gjkPointList)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                gjkPointList[selectionIndex].point.x = dipX;
+                gjkPointList[selectionIndex].point.y = dipY;
+                gjkListOFPointsForHull = GJK::GetHull(gjkPointList, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+                gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+                intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+                GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
+            }
+        }
+        if (HitDetectEllipse(pixelX, pixelY, gjkPointList2)) {
+            if ((flags & MK_LBUTTON) && selectionIndex != -1) {
+                gjkPointList2[selectionIndex].point.x = dipX;
+                gjkPointList2[selectionIndex].point.y = dipY;
+                gjkListOFPointsForHull2 = GJK::GetHull(gjkPointList2, pRenderTarget);
+                OnPaint();
+                MakeGrid();
+                GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+                GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+                gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+                gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+                intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+                GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
+            }
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull) && selectionIndex == -1) {
+            gjkPointList = MoveHull(dipX, dipY, gjkPointList);
+            OnPaint();
+            MakeGrid();
+            gjkListOFPointsForHull = GJK::GetHull(gjkPointList, pRenderTarget);
+            GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+
+            gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+            gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+            intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+            GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
+
+        }
+        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull2) && selectionIndex == -1) {
+            gjkPointList2 = MoveHull(dipX, dipY, gjkPointList2);
+            OnPaint();
+            MakeGrid();
+            gjkListOFPointsForHull2 = GJK::GetHull(gjkPointList2, pRenderTarget);
+            GJK::DrawHullAndPoints(gjkListOFPointsForHull, gjkPointList, pRenderTarget, pBrushGreen, pBrushWhite);
+            GJK::DrawHullAndPoints(gjkListOFPointsForHull2, gjkPointList2, pRenderTarget, pBrushGreen, pBrushWhite);
+
+            gjkPointListTotal = GJK::GeneratePointListTotal(gjkPointList, gjkPointList2, pRenderTarget);
+            gjkListOFPointsForHullTotal = GJK::GetHull(gjkPointListTotal, pRenderTarget);
+            intersect = GJK::Intersects(gjkListOFPointsForHull, gjkListOFPointsForHull2, pRenderTarget);
+            GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
+
+        }
+    }
+       
+    
+}
+
+vector<D2D1_ELLIPSE> MainWindow::MoveHull(int dipX, int dipY, vector<D2D1_ELLIPSE>hull) {
+    float distanceX = dipX - oldMousePos.x;
+    float distanceY = dipY - oldMousePos.y;
+    for (int i = 0; i < hull.size(); i++) {
+        hull[i].point.x = hull[i].point.x += distanceX;
+        hull[i].point.y = hull[i].point.y += distanceY;
+    }
+    oldMousePos.x = dipX;
+    oldMousePos.y = dipY;
+    return hull;
 }
 
 //handles all the messages given to this app from windows
@@ -415,16 +701,16 @@ LRESULT MainWindow::HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_LBUTTONDOWN:
         OnLButtonDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
-    case WM_LBUTTONUP://may not be necessary
-//        OnLButtonUp();
+    case WM_LBUTTONUP:
+        selectionIndex = -1;
         return 0;
     case WM_MOUSEMOVE:
-//        OnMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), (DWORD)wParam);
+        OnMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), (DWORD)wParam);
         return 0;
-    case WM_SETCURSOR://may not be necessary
+    case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT)
         {
-//            SetCursor(hCursor);
+            SetCursor(LoadCursor(NULL, IDC_HAND));
             return TRUE;
         }
         break;
