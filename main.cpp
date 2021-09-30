@@ -1,6 +1,6 @@
 #include <windows.h>
 #include <Windowsx.h>
-
+#include <math.h>
 #include <dwrite.h>
 #include <iostream>
 #pragma comment(lib, "Dwrite")
@@ -77,13 +77,18 @@ class MainWindow : public BaseWindow<MainWindow> {
     vector<D2D1_ELLIPSE> gjkPointListTotal;
     bool intersect;
 
+    bool hullHit;
+    bool pointHit;
+    bool hasHit;
     int selectionIndex;
+    int currentHullHit;
 
     BOOL    HitDetectEllipse(int mouseX, int mouseY, vector<D2D1_ELLIPSE> listOfPoints);
     BOOL    HitDetectHull(int mouseX, int mouseY, vector<D2D1_ELLIPSE> hull);
     BOOL    IsInRect(int mouseX, int mouseY, D2D1_RECT_F rect);
     void    OnLButtonDown(int pixelX, int pixelY);
 
+    float Distance(int mouseX, int mouseY, int ellipseX, int ellipseY);
     void    CalculateLayout();
     void    MakeGrid();
     HRESULT CreateTextResources();
@@ -93,6 +98,7 @@ class MainWindow : public BaseWindow<MainWindow> {
     void    OnPaint();
     void    Resize();
     void    OnMouseMove(int pixelX, int pixelY, DWORD flags);
+    void    OnMouseUp();
     vector<D2D1_ELLIPSE> MoveHull(int dipX, int dipY, vector<D2D1_ELLIPSE>hull);
 
 public:
@@ -346,6 +352,10 @@ BOOL MainWindow::IsInRect(int pixelX, int pixelY, D2D1_RECT_F rect) {
     return false;
 }
 
+float MainWindow::Distance(int mouseX, int mouseY, int ellipseX, int ellipseY) {
+    return sqrt(((ellipseX - mouseX) * (ellipseX - mouseX)) + ((ellipseY - mouseY) * (ellipseY - mouseY)));
+}
+
 BOOL MainWindow::HitDetectEllipse(int mouseX, int mouseY, vector<D2D1_ELLIPSE> list) {
     const float dipX = DPIScale::PixelsToDipsX(mouseX);
     const float dipY = DPIScale::PixelsToDipsY(mouseY);
@@ -354,19 +364,26 @@ BOOL MainWindow::HitDetectEllipse(int mouseX, int mouseY, vector<D2D1_ELLIPSE> l
         const float b = list[i].radiusY;
         const float x1 = dipX - list[i].point.x;
         const float y1 = dipY - list[i].point.y;
-        const float d = ((x1 * x1) / (a * a)) + ((y1 * y1) / (b * b));
-        if (d <= 1.0f) {
+        //const float d = ((x1 * x1) / (a * a)) + ((y1 * y1) / (b * b));
+        //if (d <= 1.0f) {
+        if(Distance(dipX,dipY,list[i].point.x,list[i].point.y)< a){
             selectionIndex = i;
+            pointHit = true;
             return true;
         }
     }
+    hasHit = true;
     return false;
 }
 
 BOOL MainWindow::HitDetectHull(int mouseX, int mouseY, vector<D2D1_ELLIPSE> hull) {
     const float dipX = DPIScale::PixelsToDipsX(mouseX);
     const float dipY = DPIScale::PixelsToDipsY(mouseY);
-    return PointConvexhull::Contains(dipX, dipY, hull, pRenderTarget);
+    bool temp = PointConvexhull::Contains(dipX, dipY, hull, pRenderTarget);
+    if (temp)
+        hullHit = true;
+    hasHit = true;
+    return temp;
 }
 
 //handles the left button clicks
@@ -448,7 +465,7 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
     const float dipX = DPIScale::PixelsToDipsX(pixelX);
     const float dipY = DPIScale::PixelsToDipsY(pixelY);
     if (currentAlgLoaded == 1) {//mindiff
-        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList)) {
+        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList) && !hullHit) {
             if ((flags & MK_LBUTTON) && selectionIndex != -1) {
                 minDiffPointList[selectionIndex].point.x = dipX;
                 minDiffPointList[selectionIndex].point.y = dipY;
@@ -462,7 +479,7 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
             }
         }
-        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList2)) {
+        if (HitDetectEllipse(pixelX, pixelY, minDiffPointList2) && !hullHit) {
             if ((flags & MK_LBUTTON) && selectionIndex != -1) {
                 minDiffPointList2[selectionIndex].point.x = dipX;
                 minDiffPointList2[selectionIndex].point.y = dipY;
@@ -476,7 +493,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
             }
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull)||currentHullHit == 1) && selectionIndex == -1) {
+            currentHullHit == 1;
             minDiffPointList = MoveHull(dipX, dipY, minDiffPointList);
             OnPaint();
             MakeGrid();
@@ -489,7 +507,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
             MinkowskiDifference::DrawHullAndPointsTotal(minDiffListOFPointsForHullTotal, minDiffPointListTotal, pRenderTarget, pBrushRed);
 
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull2) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, minDiffListOFPointsForHull2)||currentHullHit == 2) && selectionIndex == -1) {
+            currentHullHit = 2;
             minDiffPointList2 = MoveHull(dipX, dipY, minDiffPointList2);
             OnPaint();
             MakeGrid();
@@ -532,7 +551,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
             }
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull)||currentHullHit == 1) && selectionIndex == -1) {
+            currentHullHit == 1;
             minSumPointList = MoveHull(dipX, dipY, minSumPointList);
             OnPaint();
             MakeGrid();
@@ -545,7 +565,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
             MinkowskiSum::DrawHullAndPointsTotal(minSumListOFPointsForHullTotal, minSumPointListTotal, pRenderTarget, pBrushRed);
 
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull2) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, minSumListOFPointsForHull2)||currentHullHit == 2) && selectionIndex == -1) {
+            currentHullHit = 2;
             minSumPointList2 = MoveHull(dipX, dipY, minSumPointList2);
             OnPaint();
             MakeGrid();
@@ -568,7 +589,7 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 Quickhull::DrawHullAndPoints(quickhullListOFPointsForHull, quickhullPointList, pRenderTarget, pBrushYellow, pBrushWhite);
             }  
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, quickhullListOFPointsForHull) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, quickhullListOFPointsForHull) || hullHit) && selectionIndex == -1) {
             quickhullPointList = MoveHull(dipX, dipY, quickhullPointList);
             quickhullListOFPointsForHull = Quickhull::GetHull(quickhullPointList, pRenderTarget);
             OnPaint();
@@ -587,7 +608,7 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 PointConvexhull::DrawHullAndPoints(convexhullListOFPointsForHull, targetPoint, pRenderTarget, pBrushGreen, pBrushWhite, pBrushRed);
             }
         }
-        else if ((flags & MK_LBUTTON) &&HitDetectHull(pixelX, pixelY, convexhullListOFPointsForHull) && selectionIndex == -1) {
+        else if ((flags & MK_LBUTTON) &&(HitDetectHull(pixelX, pixelY, convexhullListOFPointsForHull)||hullHit) && selectionIndex == -1) {
             convexhullListOFPointsForHull = MoveHull(dipX, dipY, convexhullListOFPointsForHull);
             OnPaint();
             PointConvexhull::DrawHullAndPoints(convexhullListOFPointsForHull, targetPoint, pRenderTarget, pBrushGreen, pBrushWhite, pBrushRed);
@@ -625,7 +646,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
                 GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
             }
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull)||currentHullHit==1) && selectionIndex == -1) {
+            currentHullHit = 1;
             gjkPointList = MoveHull(dipX, dipY, gjkPointList);
             OnPaint();
             MakeGrid();
@@ -639,7 +661,8 @@ void MainWindow::OnMouseMove(int pixelX, int pixelY, DWORD flags) {
             GJK::DrawHullAndPointsTotal(gjkListOFPointsForHullTotal, gjkPointListTotal, pRenderTarget, pBrushGreen, pBrushPurple, intersect);
 
         }
-        if ((flags & MK_LBUTTON) && HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull2) && selectionIndex == -1) {
+        if ((flags & MK_LBUTTON) && (HitDetectHull(pixelX, pixelY, gjkListOFPointsForHull2)||currentHullHit ==2) && selectionIndex == -1) {
+            currentHullHit = 2;
             gjkPointList2 = MoveHull(dipX, dipY, gjkPointList2);
             OnPaint();
             MakeGrid();
@@ -668,6 +691,14 @@ vector<D2D1_ELLIPSE> MainWindow::MoveHull(int dipX, int dipY, vector<D2D1_ELLIPS
     oldMousePos.x = dipX;
     oldMousePos.y = dipY;
     return hull;
+}
+
+void MainWindow::OnMouseUp() {
+    selectionIndex = -1;
+    currentHullHit = 0;
+    hullHit = false;
+    pointHit = false;
+    hasHit = false;
 }
 
 //handles all the messages given to this app from windows
@@ -702,7 +733,7 @@ LRESULT MainWindow::HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
         OnLButtonDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
     case WM_LBUTTONUP:
-        selectionIndex = -1;
+        OnMouseUp();
         return 0;
     case WM_MOUSEMOVE:
         OnMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), (DWORD)wParam);
